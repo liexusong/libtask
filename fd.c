@@ -100,8 +100,8 @@ fdwait(int fd, int rw)
 		break;
 	}
 
-	polltask[npollfd] = taskrunning;
-	pollfd[npollfd].fd = fd;
+	polltask[npollfd] = taskrunning; // 对应的协程
+	pollfd[npollfd].fd = fd;         // 对应的fd
 	pollfd[npollfd].events = bits;
 	pollfd[npollfd].revents = 0;
 	npollfd++;
@@ -167,7 +167,9 @@ fdtask(void *v)
 	}
 }
 
-
+/*
+ * 监听fd, 直到fd可读写
+ */
 void
 fdwait(int fd, int rw)
 {
@@ -198,7 +200,7 @@ fdwait(int fd, int rw)
         int r = epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev);
         assert(r == 0);
     }
-	taskswitch();
+	taskswitch(); // 让出CPU
     epoll_ctl(epfd, EPOLL_CTL_DEL, fd, &ev);
     if (duped)
         close(fd);
