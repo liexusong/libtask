@@ -240,7 +240,9 @@ taskscheduler(void)
 		tasknswitch++;
 		taskdebug("run %d (%s)", t->id, t->name);
 		contextswitch(&taskschedcontext, &t->context);
-//print("back in scheduler\n");
+
+		qio_running_ready();
+
 		taskrunning = nil;
 		if(t->exiting){
 			if(!t->system)
@@ -366,6 +368,8 @@ main(int argc, char **argv)
 	argv0 = argv[0];
 	taskargc = argc;
 	taskargv = argv;
+
+	qio_init(0);
 
 	if(mainstacksize == 0)
 		mainstacksize = 256*1024;

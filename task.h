@@ -175,6 +175,16 @@ int		netdial(int, char*, int);
 int		netlookup(char*, uint32_t*);	/* blocks entire program! */
 int		netdial(int, char*, int);
 
+
+/*
+ * Async IO
+ */
+
+int qio_init(int io_threads);
+void qio_running_ready();
+int qread(int fd, char *buf, size_t size);
+int qwrite(int fd, char *buf, size_t size);
+
 #ifdef __cplusplus
 }
 #endif
