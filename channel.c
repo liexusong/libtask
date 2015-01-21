@@ -2,12 +2,37 @@
 
 #include "taskimpl.h"
 
+
+/*      channel
+ *      +---------+
+ *      |  arecv  | -------> +-----+
+ *      +---------+          | op1 |
+ *      |  asend  | ---+     +-----+
+ *      +---------+    |     | op2 | -----+  <--+
+ *                     |     +-----+      |      \
+ *                     |     | ... |      |       \ move to
+ *                     |     +-----+      |       /
+ *                     |                  | copy /
+ *                     +---> +-----+      |     /
+ *                           | op1 | <----+  --+
+ *                           +-----+
+ *                           | op2 |
+ *                           +-----+
+ *                           | ... |
+ *                           +-----+
+ */
+
+/**
+ * 创建一个channel
+ * @param elemsize: 元素的大小
+ * @param bufsize: 缓存队列的大小
+ */
 Channel*
 chancreate(int elemsize, int bufsize)
 {
 	Channel *c;
 
-	c = malloc(sizeof *c+bufsize*elemsize);
+	c = malloc(sizeof(*c) + bufsize * elemsize);
 	if(c == nil){
 		fprint(2, "chancreate malloc: %r");
 		exit(1);
@@ -68,6 +93,9 @@ chanarray(Channel *c, uint op)
 	}
 }
 
+/*
+ * alt是否能够执行
+ */
 static int
 altcanexec(Alt *a)
 {
@@ -77,7 +105,7 @@ altcanexec(Alt *a)
 	if(a->op == CHANNOP)
 		return 0;
 	c = a->c;
-	if(c->bufsize == 0){
+	if(c->bufsize == 0){ // 如果没有使用缓存
 		ar = chanarray(c, otherop(a->op));
 		return ar && ar->n;
 	}else{
@@ -164,12 +192,15 @@ altcopy(Alt *s, Alt *r)
 	if(s == nil && r == nil)
 		return;
 	assert(s != nil);
-	c = s->c;
-	if(s->op == CHANRCV){
+
+	c = s->c; // belong's channel
+
+	if(s->op == CHANRCV) { // 如果s是recv操作, 交换s和r, 保证s是send操作, r是recv操作
 		t = s;
 		s = r;
 		r = t;
 	}
+
 	assert(s==nil || s->op == CHANSND);
 	assert(r==nil || r->op == CHANRCV);
 
@@ -207,14 +238,16 @@ altexec(Alt *a)
 	Channel *c;
 
 	c = a->c;
-	ar = chanarray(c, otherop(a->op));
-	if(ar && ar->n){
+
+	ar = chanarray(c, otherop(a->op)); // 获取反向操作队列(例如是recv操作获取到的就是send队列)
+
+	if(ar && ar->n){ // 如果可以执行
 		i = rand()%ar->n;
 		other = ar->a[i];
-		altcopy(a, other);
-		altalldequeue(other->xalt);
+		altcopy(a, other); // 把结果复制到当前alt中
+		altalldequeue(other->xalt); // 把other从队列中删除
 		other->xalt[0].xalt = other;
-		taskready(other->task);
+		taskready(other->task); // 把阻塞的task唤醒
 	}else
 		altcopy(a, nil);
 }
@@ -228,55 +261,51 @@ chanalt(Alt *a)
 	Task *t;
 
 	needstack(512);
+
+	// find the last alt element
 	for(i=0; a[i].op != CHANEND && a[i].op != CHANNOBLK; i++)
 		;
 	n = i;
 	canblock = a[i].op == CHANEND;
 
-	t = taskrunning;
+	t = taskrunning; // current running coroutine
+
+	// set alt's info
 	for(i=0; i<n; i++){
 		a[i].task = t;
-		a[i].xalt = a;
+		a[i].xalt = a;   // 指向alt队列的头一个alt
 	}
-if(dbgalt) print("alt ");
+
 	ncan = 0;
 	for(i=0; i<n; i++){
 		c = a[i].c;
-if(dbgalt) print(" %c:", "esrnb"[a[i].op]);
-if(dbgalt) { if(c->name) print("%s", c->name); else print("%p", c); }
+
 		if(altcanexec(&a[i])){
-if(dbgalt) print("*");
 			ncan++;
 		}
 	}
+
 	if(ncan){
-		j = rand()%ncan;
+		j = rand()%ncan; // 随机找到一个可以执行的alt执行
 		for(i=0; i<n; i++){
 			if(altcanexec(&a[i])){
 				if(j-- == 0){
-if(dbgalt){
-c = a[i].c;
-print(" => %c:", "esrnb"[a[i].op]);
-if(c->name) print("%s", c->name); else print("%p", c);
-print("\n");
-}
 					altexec(&a[i]);
 					return i;
 				}
 			}
 		}
 	}
-if(dbgalt)print("\n");
 
 	if(!canblock)
 		return -1;
 
 	for(i=0; i<n; i++){
 		if(a[i].op != CHANNOP)
-			altqueue(&a[i]);
+			altqueue(&a[i]); // 把alt添加到等待队列中
 	}
 
-	taskswitch();
+	taskswitch(); // 让出CPU
 
 	/*
 	 * the guy who ran the op took care of dequeueing us
